@@ -1,0 +1,113 @@
+
+project(darknet_verfication)
+set(CMAKE_C_COMPILER "gcc")
+set(CMAKE_CXX_COMPILER "g++")
+
+set(CMAKE_CXX_STANDARD 11)
+
+#optee_client export dir
+set(TEEC_EXPORT /usr)
+#Only one of the following two options can be selected
+option(DARKNET_CPU "Enable CPU support" OFF)
+option(DARKNET_GPU "Enable OpenCL support" On)
+
+#The following three options are only available when using GPU
+option(DARKNET_ARM "Enable ARM support" ON)
+option(DARKNET_NVIDIA "Use Nvidia GPU" OFF)
+option(DARKNET_INTEL "Use intel or AMD GPU" OFF)
+
+option(DARKNET_SECURITY "Enable secure verfication" ON)
+option(DARKNET_OPENMP "Enable OpenMP support" OFF)
+option(DARKNET_OPENCV "Enable OpenCV support" OFF)
+option(DARKNET_ATTACK "Alter the result of C" ON)
+option(DARKNET_BENCHMARK "Some Benchmark Stats" OFF)
+option(DARKNET_LOSS_ONLY "Loss Only Stats" OFF)
+
+option(DARKNET_DEBUG "Enable debug mode" ON)
+set(THREADS_NUM 2)
+
+include_directories("include" "src" "/usr/include/" "/usr/local/include/" "../")
+include_directories(${TEEC_EXPORT}/include)
+link_directories(${TEEC_EXPORT}/lib)
+set(EXECUTABLE_OUTPUT_PATH  ${PROJECT_SOURCE_DIR})
+if(DARKNET_DEBUG)
+    set(CMAKE_BUILD_TYPE "Debug")
+endif()
+
+aux_source_directory(./src/ DARKNET_SRC)
+aux_source_directory(./examples DARKNET_EXAMPLE)
+add_executable(darknet ${DARKNET_SRC} ${DARKNET_EXAMPLE})
+link_directories(/usr/lib /usr/local/lib)
+
+if(DARKNET_ARM)
+    include_directories(/usr/include/aarch64-linux-gnu)
+    link_directories(/usr/lib/aarch64-linux-gnu)    
+else()
+    include_directories(/usr/include/x86_64-linux-gnu)
+    link_directories(/usr/lib/x86_64-linux-gnu)
+endif()
+
+target_link_libraries(darknet m z pthread)
+
+if(DARKNET_BENCHMARK)
+    add_definitions(-DBENCHMARK)
+endif()
+if(DARKNET_LOSS_ONLY)
+    add_definitions(-DLOSS_ONLY)
+endif()
+
+if(DARKNET_OPENMP)
+    add_definitions(-DOPENMP)
+    find_package(OpenMP REQUIRED)
+    if(OPENMP_FOUND)
+        set(CMAKE_C_FLAGS ${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS})
+        set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS})
+        set(CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS})
+    endif()
+endif()
+
+if(DARKNET_SECURITY)
+    add_definitions(-DSECURITY -DDEFAULT_MAX_THREAD_NUM=${THREADS_NUM})
+    target_link_libraries(darknet teec)
+endif()
+    
+if(DARKNET_ATTACK)
+    add_definitions(-DATTACK)
+endif()
+
+if(DARKNET_GPU)
+    add_definitions(-DGPU)
+    if(DARKNET_OPENCV)
+        find_package(OpenCV REQUIRED)
+        if(OPENCV_FOUND)
+            add_definitions(-DOPENCV)
+            message("OPENCV FOUND")
+            include_directories(${OpenCV_INCLUDE_DIRS})
+            link_directories(${OpenCV_LIBRARY_DIRS})
+            target_link_libraries(darknet ${OpenCV_LIBS})
+        else()
+            message(FATAL_ERROR "ERROR:OPENCV not found")
+        endif()
+    endif()
+
+    if(DARKNET_ARM)
+        add_definitions(-DARM)
+        add_definitions(-DCL_TARGET_OPENCL_VERSION=120)
+    elseif(DARKNET_NVIDIA)
+        add_definitions(-DCL_TARGET_OPENCL_VERSION=120)
+        include_directories(/usr/local/cuda/include/)
+        link_directories(/usr/local/cuda/lib64 )
+    elseif(DARKNET_INTEL)
+        add_definitions(-DCL_TARGET_OPENCL_VERSION=220)
+    else()
+        message(FATAL_ERROR "It need to select your device")
+    endif()
+
+    target_link_libraries(darknet OpenCL clblast)
+elseif(DARKNET_CPU)
+    add_definitions(-DCPU)
+
+else()
+    message(FATAL_ERROR "please select CPU or GPU")
+endif()
+set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR})
